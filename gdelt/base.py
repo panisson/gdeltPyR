@@ -161,18 +161,42 @@ class gdelt(object):
                  gdelt2url='http://data.gdeltproject.org/gdeltv2/',
                  gdelt1url='http://data.gdeltproject.org/events/',
                  version=2.0,
-                 cores=cpu_count()
-
+                 cores=cpu_count(),
+                 cache_dir=None
                  ):
 
         self.codes = codes
         self.translation = None
         self.version = version
         self.cores = cores
+        self.cache_dir = cache_dir
         if int(version) == 2:
             self.baseUrl = gdelt2url
         elif int(version) == 1:
             self.baseUrl = gdelt1url
+
+        if self.cache_dir is None:
+            self._mp_worker = _mp_worker
+        else:
+            import joblib
+
+            if not os.path.exists(self.cache_dir):
+                os.makedirs(self.cache_dir)
+
+            def extract_file_name(url):
+                return os.path.split(url)[1]
+
+            def _cached_mp_worker(url, table=None):
+                file_name = extract_file_name(url)
+                file_path = os.path.join(self.cache_dir, file_name) + '.cached'
+                if os.path.exists(file_path):
+                    part = joblib.load(file_path)
+                else:
+                    part = _mp_worker(url, table=table)
+                    joblib.dump(part, file_path, compress=('gzip', 3))
+                return part
+
+            self._mp_worker = _cached_mp_worker
 
     ###############################
     # Searcher function for GDELT
@@ -275,11 +299,11 @@ class gdelt(object):
             we pull every 15 minute interval for historical days and up to
             the most recent 15 minute interval for the current day, if that
             day is included.
-            
+
         translation : bool, default: False
             Whether or not to pull the translation database available from
             version 2 of GDELT. If translation is True, the translated set
-            is downloaded, if set to False the english set is downloaded. 
+            is downloaded, if set to False the english set is downloaded.
 
         queryTime : datetime object, system generated
             This records the system time when gdeltPyR's query was executed,
@@ -303,21 +327,21 @@ class gdelt(object):
             coverage, table name, query dates, and query time.
 
             csv- Outputs a CSV format; all dates and columns are joined
-            
+
             shp- Writes an ESRI shapefile to current directory or path; output
             is filtered to exclude rows with no latitude or longitude
-            
-            geojson- 
-            
+
+            geojson-
+
             geodataframe- Returns a geodataframe; output is filtered to exclude
             rows with no latitude or longitude.  This output can be manipulated
-            for geoprocessing/geospatial operations such as reprojecting the 
+            for geoprocessing/geospatial operations such as reprojecting the
             coordinates, creating a thematic map (choropleth map), merging with
             other geospatial objects, etc.  See http://geopandas.org/ for info.
 
         normcols : bool
-            Applies a generic lambda function to normalize GDELT columns 
-            for compatibility with SQL or Shapefile outputs.  
+            Applies a generic lambda function to normalize GDELT columns
+            for compatibility with SQL or Shapefile outputs.
         Examples
         --------
         >>> from gdelt
@@ -416,7 +440,7 @@ class gdelt(object):
         urlsv1events = partial(_urlBuilder, version=1, table='events')
         urlsv2gkg = partial(_urlBuilder, version=2, table='gkg', translation=self.translation)
 
-        eventWork = partial(_mp_worker, table='events')
+        eventWork = partial(self._mp_worker, table='events')
         codeCams = partial(_cameos, codes=codes)
 
         #####################################
@@ -609,7 +633,7 @@ class gdelt(object):
                 #     results = eventWork(self.download_list)
                 #
                 # else:
-                results = _mp_worker(self.download_list)
+                results = self._mp_worker(self.download_list)
 
         else:
 
@@ -621,7 +645,7 @@ class gdelt(object):
             else:
 
                 pool = NoDaemonProcessPool(processes=cpu_count())
-                downloaded_dfs = list(pool.imap_unordered(_mp_worker,
+                downloaded_dfs = list(pool.imap_unordered(self._mp_worker,
                                                           self.download_list))
             pool.close()
             pool.terminate()
