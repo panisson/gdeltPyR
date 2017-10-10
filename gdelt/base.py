@@ -59,6 +59,30 @@ class NoDaemonProcessPool(multiprocessing.pool.Pool):
     Process = NoDaemonProcess
 
 
+import joblib
+
+
+class cached_mp_worker(object):
+
+    def __init__(self, _mp_worker, cache_dir):
+        self.cache_dir = cache_dir
+        self._mp_worker = _mp_worker
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+
+    def extract_file_name(self, url):
+        return os.path.split(url)[1]
+
+    def __call__(self, url, table=None):
+        file_name = self.extract_file_name(url)
+        file_path = os.path.join(self.cache_dir, file_name) + '.cached'
+        if os.path.exists(file_path):
+            part = joblib.load(file_path)
+        else:
+            part = self._mp_worker(url, table=table)
+            joblib.dump(part, file_path, compress=('gzip', 3))
+        return part
+
 ##############################################
 #  Admin to load local files
 ##############################################
@@ -178,25 +202,8 @@ class gdelt(object):
         if self.cache_dir is None:
             self._mp_worker = _mp_worker
         else:
-            import joblib
 
-            if not os.path.exists(self.cache_dir):
-                os.makedirs(self.cache_dir)
-
-            def extract_file_name(url):
-                return os.path.split(url)[1]
-
-            def _cached_mp_worker(url, table=None):
-                file_name = extract_file_name(url)
-                file_path = os.path.join(self.cache_dir, file_name) + '.cached'
-                if os.path.exists(file_path):
-                    part = joblib.load(file_path)
-                else:
-                    part = _mp_worker(url, table=table)
-                    joblib.dump(part, file_path, compress=('gzip', 3))
-                return part
-
-            self._mp_worker = _cached_mp_worker
+            self._mp_worker = cached_mp_worker(_mp_worker, cache_dir)
 
     ###############################
     # Searcher function for GDELT
