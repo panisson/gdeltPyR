@@ -646,21 +646,30 @@ class gdelt(object):
 
             if self.table == 'events':
 
-                pool = Pool(processes=self.cores)
-                downloaded_dfs = list(pool.imap_unordered(eventWork,
-                                                          self.download_list))
+                try:
+                    pool = Pool(processes=self.cores)
+                    downloaded_dfs = list(
+                        pool.imap_unordered(eventWork, self.download_list))
+                finally:
+                    pool.close()
+                    pool.terminate()
+                    pool.join()
+
             else:
 
-                pool = NoDaemonProcessPool(processes=self.cores)
-                downloaded_dfs = list(pool.imap_unordered(self._mp_worker,
-                                                          self.download_list))
-            pool.close()
-            pool.terminate()
-            pool.join()
+                try:
+                    pool = NoDaemonProcessPool(processes=self.cores)
+                    downloaded_dfs = list(
+                        pool.imap_unordered(self._mp_worker,
+                                            self.download_list))
+                finally:
+                    pool.close()
+                    pool.terminate()
+                    pool.join()
+
             results = pd.concat(downloaded_dfs)
             del downloaded_dfs
             results.reset_index(drop=True, inplace=True)
-
 
         if self.table == 'gkg' and self.version == 1:
             results.columns = results.ix[0].values.tolist()
