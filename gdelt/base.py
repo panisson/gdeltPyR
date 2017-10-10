@@ -639,12 +639,12 @@ class gdelt(object):
 
             if self.table == 'events':
 
-                pool = Pool(processes=cpu_count())
+                pool = Pool(processes=self.cores)
                 downloaded_dfs = list(pool.imap_unordered(eventWork,
                                                           self.download_list))
             else:
 
-                pool = NoDaemonProcessPool(processes=cpu_count())
+                pool = NoDaemonProcessPool(processes=self.cores)
                 downloaded_dfs = list(pool.imap_unordered(self._mp_worker,
                                                           self.download_list))
             pool.close()
